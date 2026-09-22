@@ -108,19 +108,37 @@ electron.ipcRenderer.on("view-style-changed", (_event, nextViewStyle) => {
   applyViewStyle(nextViewStyle);
 });
 
+const TWEMOJI_VERSION = "17.0.3";
+const ZWJ = "200D";
+const UNSUPPORTED_ZWJ_JOINERS = new Set(["1FAEF", "1F430"]);
+
+function isUnsupportedZwjEmoji(item) {
+  if (!item || !item.codes) return false;
+  const codes = item.codes.split(" ");
+  if (!codes.includes(ZWJ)) return false;
+  return codes.some((code) => UNSUPPORTED_ZWJ_JOINERS.has(code));
+}
+
+function emojiDisplayHtml(item) {
+  if (!isUnsupportedZwjEmoji(item)) return item.char;
+  const hex = item.codes.split(" ").map((c) => c.toLowerCase()).join("-");
+  const src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@${TWEMOJI_VERSION}/assets/72x72/${hex}.png`;
+  return `<img class="emojiImage" src="${src}" alt="${item.char}" draggable="false">`;
+}
+
 function renderEmojiButton(item, index) {
   const name = emojiName(item);
   const title = escapeAttr(name);
   if (viewStyle === "grid") {
     return `
       <button type="button" onclick="typeEmoji(event, '${item.char}')" class="emojiButton emojiGridButton" title="${title}" tabindex="${index + 2}">
-        ${item.char}
+        ${emojiDisplayHtml(item)}
       </button>
     `;
   }
   return `
     <button type="button" onclick="typeEmoji(event, '${item.char}')" class="emojiButton" tabindex="${index + 2}">
-      ${item.char}
+      ${emojiDisplayHtml(item)}
       ${name}
     </button>
     </br>

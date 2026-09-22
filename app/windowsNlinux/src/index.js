@@ -170,7 +170,13 @@ fetch("https://virejdasani.github.io/RemoteJSON/Geniemoji/index.html")
     // console.log(err)
   });
 
+const TWEMOJI_VERSION = "17.0.3";
+const ZWJ = "200D";
+// Unicode 17 joiners that Windows still draws as separate people + object.
+const UNSUPPORTED_ZWJ_JOINERS = new Set(["1FAEF", "1F430"]);
+
 // Windows Segoe UI Emoji does not draw country flags (shows "MX", "US", etc.).
+// It also cannot compose some multi-person ZWJ sequences (wrestling, bunny ears).
 // Render those with Twemoji images in the UI; clipboard still gets the real emoji.
 function isFlagEmoji(item) {
   const codes = item.codes.split(" ");
@@ -188,14 +194,30 @@ function isFlagEmoji(item) {
   return codes[0] === "1F3F4" && codes.some((c) => c.startsWith("E00"));
 }
 
-function flagImageHtml(item) {
+function isUnsupportedZwjEmoji(item) {
+  const codes = item.codes.split(" ");
+  if (!codes.includes(ZWJ)) return false;
+  return codes.some((code) => UNSUPPORTED_ZWJ_JOINERS.has(code));
+}
+
+function needsTwemojiImage(item) {
+  if (!item || !item.codes) return false;
+  return isFlagEmoji(item) || isUnsupportedZwjEmoji(item);
+}
+
+function emojiImageHtml(item) {
   const hex = item.codes.split(" ").map((c) => c.toLowerCase()).join("-");
-  const src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@15.1.0/assets/72x72/${hex}.png`;
-  return `<img class="emojiFlag" src="${src}" alt="${item.char}" draggable="false">`;
+  const src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@${TWEMOJI_VERSION}/assets/72x72/${hex}.png`;
+  return `<img class="emojiImage" src="${src}" alt="${item.char}" draggable="false" onerror="this.replaceWith(document.createTextNode(this.alt))">`;
+}
+
+function unsupportedMarkerHtml() {
+  return `<span class="emojiUnsupported" aria-hidden="true">*</span>`;
 }
 
 function emojiDisplayHtml(item) {
-  return isFlagEmoji(item) ? flagImageHtml(item) : item.char;
+  if (!needsTwemojiImage(item)) return item.char;
+  return `${emojiImageHtml(item)}${unsupportedMarkerHtml()}`;
 }
 
 function truncatePreview(text, max = 36) {
@@ -221,8 +243,9 @@ function renderEmojiButton(item, index) {
         </button>
       `;
     }
+    const unsupportedClass = needsTwemojiImage(item) ? " hasUnsupportedEmoji" : "";
     return `
-      <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton emojiGridButton${selectedClass}" title="${title}" data-index="${index}" tabindex="-1">
+      <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton emojiGridButton${selectedClass}${unsupportedClass}" title="${title}" data-index="${index}" tabindex="-1">
         ${emojiDisplayHtml(item)}
       </button>
     `;
@@ -238,8 +261,9 @@ function renderEmojiButton(item, index) {
     `;
   }
 
+  const unsupportedClass = needsTwemojiImage(item) ? " hasUnsupportedEmoji" : "";
   return `
-    <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton${selectedClass}" data-index="${index}" tabindex="-1">
+    <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton${selectedClass}${unsupportedClass}" data-index="${index}" tabindex="-1">
       ${emojiDisplayHtml(item)}
       ${name}
     </button>
@@ -283,8 +307,22 @@ async function search() {
 
   // Displays all the matching emojis in the answer html div
   document.getElementById("answer").innerHTML = answerEmojis;
+  replaceOverflowingEmojiGlyphs();
   focusSearchInput();
 } // Search function end
+
+function replaceOverflowingEmojiGlyphs() {
+  if (viewStyle !== "grid") return;
+  document.querySelectorAll(".emojiGridButton").forEach((button) => {
+    if (button.classList.contains("shortcutGridButton")) return;
+    if (button.querySelector(".emojiImage")) return;
+    if (button.scrollWidth <= button.clientWidth + 1) return;
+    const item = currentEmojis[Number(button.dataset.index)];
+    if (!item || !item.codes) return;
+    button.innerHTML = `${emojiImageHtml(item)}${unsupportedMarkerHtml()}`;
+    button.classList.add("hasUnsupportedEmoji");
+  });
+}
 
 // Enter types the highlighted emoji/shortcut, copies it, and closes Geniemoji
 document.getElementById("commandInput").addEventListener("keydown", (e) => {
