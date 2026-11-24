@@ -31,6 +31,12 @@ let language = store.get("language", "en");
 let viewStyle = store.get("viewStyle", "list");
 let textShortcuts = normalizeTextShortcuts(store.get("textShortcuts", []));
 let openAtLogin = store.get("openAtLogin", false);
+let pauseInFullscreen = store.get("pauseInFullscreen", true);
+let fullscreenAppActive = false;
+let stopFullscreenWatch = () => {};
+
+const fullscreen = require("./src/fullscreen");
+const SUMMON_SHORTCUT = "Control+e";
 
 const trayStrings = {
   en: {
@@ -50,6 +56,7 @@ const trayStrings = {
       process.platform === "darwin"
         ? "Start at login"
         : "Start with Windows",
+    pauseInFullscreen: "Pause Ctrl+E in fullscreen apps",
     exit: "Exit",
   },
   es: {
@@ -69,6 +76,7 @@ const trayStrings = {
       process.platform === "darwin"
         ? "Iniciar al iniciar sesión"
         : "Iniciar con Windows",
+    pauseInFullscreen: "Pausar Ctrl+E en apps de pantalla completa",
     exit: "Salir",
   },
 };
@@ -146,6 +154,45 @@ const setOpenAtLogin = (enabled) => {
   openAtLogin = !!enabled;
   store.set("openAtLogin", openAtLogin);
   applyOpenAtLogin(openAtLogin);
+  updateTrayMenu();
+};
+
+const onSummonShortcut = () => {
+  if (window.isVisible()) {
+    hideWindow();
+  } else {
+    showWindow();
+  }
+};
+
+// Ctrl+E is only held while no fullscreen app is in front, so games get the key back.
+const syncSummonShortcut = () => {
+  const shouldHold = !(pauseInFullscreen && fullscreenAppActive);
+  const holding = globalShortcut.isRegistered(SUMMON_SHORTCUT);
+  if (shouldHold && !holding) {
+    globalShortcut.register(SUMMON_SHORTCUT, onSummonShortcut);
+  } else if (!shouldHold && holding) {
+    globalShortcut.unregister(SUMMON_SHORTCUT);
+  }
+};
+
+const startFullscreenWatch = () => {
+  stopFullscreenWatch();
+  stopFullscreenWatch = () => {};
+  fullscreenAppActive = false;
+  if (pauseInFullscreen) {
+    stopFullscreenWatch = fullscreen.watchFullscreen((active) => {
+      fullscreenAppActive = active;
+      syncSummonShortcut();
+    });
+  }
+  syncSummonShortcut();
+};
+
+const setPauseInFullscreen = (enabled) => {
+  pauseInFullscreen = !!enabled;
+  store.set("pauseInFullscreen", pauseInFullscreen);
+  startFullscreenWatch();
   updateTrayMenu();
 };
 
@@ -340,6 +387,16 @@ const updateTrayMenu = () => {
             },
           ]
         : []),
+      ...(fullscreen.isSupported()
+        ? [
+            {
+              label: t.pauseInFullscreen,
+              type: "checkbox",
+              checked: pauseInFullscreen,
+              click: (menuItem) => setPauseInFullscreen(menuItem.checked),
+            },
+          ]
+        : []),
       { type: "separator" },
       {
         label: t.exit,
@@ -393,9 +450,9 @@ const createWindow = () => {
   });
 
   // This opens all links with `target="_blank"` in external browser
-  window.webContents.on("new-window", function (event, url) {
-    event.preventDefault();
+  window.webContents.setWindowOpenHandler(({ url }) => {
     open(url);
+    return { action: "deny" };
   });
 
   // Hide the window when it loses focus
@@ -405,13 +462,8 @@ const createWindow = () => {
   });
 
   // This is a global shortcut to activate Geniemoji with hotkey(s)
-  globalShortcut.register("Control+e", () => {
-    if (window.isVisible()) {
-      hideWindow();
-    } else {
-      showWindow();
-    }
-  });
+  // Released automatically while a fullscreen app is in front (see startFullscreenWatch)
+  startFullscreenWatch();
   if (process.platform == "darwin") {
     // Don't show the app in the dock for macOS
     app.dock.hide();

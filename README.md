@@ -29,6 +29,7 @@ Its purpose is to serve you with the most relevant emojis based on your command!
 - Navigate results with the arrow keys and press <kbd>Enter</kbd> to paste the selected emoji
 - **Custom shortcuts** (Windows / Linux): add your own text triggers that expand to any emoji or text
 - **Start at login** (Windows): launch Geniemoji when you sign in
+- **Game friendly** (Windows): while a fullscreen app (game, fullscreen video, presentation) is in front, Geniemoji releases <kbd>Control</kbd> + <kbd>e</kbd> so the game gets the key, and takes it back when you leave. Toggle it with "Pause Ctrl+E in fullscreen apps" in the tray menu
 - Country flags and some combined emoji that Windows can't draw are shown with Twemoji images (the real emoji is still what gets copied)
 
 > Emoji added in Unicode 18.0 only display once your operating system's emoji font supports them.
@@ -61,6 +62,14 @@ OR
 ## Emoji data
 - The emoji list lives in `app/*/src/emojis.json` and follows the official [Unicode full emoji list](https://www.unicode.org/emoji/charts/full-emoji-list.html)
 - Source files: [`assets/unicode`](assets/unicode) (`emoji-test.txt`, `emoji-sequences.txt`) and Spanish annotations from [CLDR](https://cldr.unicode.org/) in [`assets/cldr`](assets/cldr)
+
+### Antivirus warnings (Windows)
+Some antivirus products (for example McAfee) may warn about or block `Geniemoji-Setup-7.0.0.exe`. This is a false positive:
+- The installer is not code-signed and is downloaded by few people, so reputation-based protection treats it as "unknown"
+- To paste the emoji into the app you were using, Geniemoji sends <kbd>Control</kbd> + <kbd>v</kbd> through a hidden PowerShell command, and it can start with Windows if you enable it. Behavior-based scanners sometimes flag these patterns
+- The v7.0.0 installer scans clean on [VirusTotal (0/67 engines)](https://www.virustotal.com/gui/file/285a69f505ab5a7f98221a045535323797d3a6d1d45b284b2c43c1c0b9e5eff3) (SHA-256 `285a69f505ab5a7f98221a045535323797d3a6d1d45b284b2c43c1c0b9e5eff3`)
+
+You can compare the hash of your download with `Get-FileHash .\Geniemoji-Setup-7.0.0.exe` in PowerShell. If your antivirus still blocks it, you can restore the file from quarantine or add an exception. You can also build it yourself from source (see [app/README.md](app/README.md)).
 
 ### Check out Geniemoji on YouTube [here](https://youtu.be/2k41mwqKN9A)
 
