@@ -66,10 +66,10 @@ OR
 ### Antivirus warnings (Windows)
 Some antivirus products (for example McAfee) may warn about or block `Geniemoji-Setup-7.0.0.exe`. This is a false positive:
 - The installer is not code-signed and is downloaded by few people, so reputation-based protection treats it as "unknown"
-- To paste the emoji into the app you were using, Geniemoji sends <kbd>Control</kbd> + <kbd>v</kbd> through a hidden PowerShell command, and it can start with Windows if you enable it. Behavior-based scanners sometimes flag these patterns
-- The v7.0.0 installer scans clean on [VirusTotal (0/67 engines)](https://www.virustotal.com/gui/file/285a69f505ab5a7f98221a045535323797d3a6d1d45b284b2c43c1c0b9e5eff3) (SHA-256 `285a69f505ab5a7f98221a045535323797d3a6d1d45b284b2c43c1c0b9e5eff3`)
+- To paste the emoji into the app you were using, Geniemoji presses <kbd>Control</kbd> + <kbd>v</kbd> for you, and it can start with Windows if you enable it. Behavior-based scanners sometimes flag these patterns. Since v7.0.0 the keypress is sent natively (Win32 `SendInput`) instead of through a hidden PowerShell command, which was the most common trigger
+- The installer scans clean on [VirusTotal (0/67 engines)](https://www.virustotal.com/gui/file/285a69f505ab5a7f98221a045535323797d3a6d1d45b284b2c43c1c0b9e5eff3); you can upload your own download there to check it
 
-You can compare the hash of your download with `Get-FileHash .\Geniemoji-Setup-7.0.0.exe` in PowerShell. If your antivirus still blocks it, you can restore the file from quarantine or add an exception. You can also build it yourself from source (see [app/README.md](app/README.md)).
+If your antivirus still blocks it, you can restore the file from quarantine or add an exception. You can also build it yourself from source (see [app/README.md](app/README.md)).
 
 ### Check out Geniemoji on YouTube [here](https://youtu.be/2k41mwqKN9A)
 

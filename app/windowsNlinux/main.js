@@ -573,16 +573,8 @@ ipcMain.on("closeShortcutWindow", () => {
 
 const pasteClipboard = async () => {
   if (process.platform === "win32") {
-    await execFileAsync(
-      "powershell.exe",
-      [
-        "-NoProfile",
-        "-STA",
-        "-Command",
-        "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')",
-      ],
-      { windowsHide: true }
-    );
+    // Native keypress instead of a hidden PowerShell process (which antivirus heuristics flag)
+    require("./src/keyboard").sendCtrlV();
     return;
   }
 
