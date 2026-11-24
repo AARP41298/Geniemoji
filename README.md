@@ -21,6 +21,18 @@ Its purpose is to serve you with the most relevant emojis based on your command!
 - You can summon Geniemoji using either the shortcut keys: <kbd>Control</kbd> + <kbd>e</kbd> or by pressing its icon in the menu bar
 - The shortcut keys are the same across all operating systems
 
+## Features
+- Up to date with **Unicode Emoji 18.0** (3,963 fully-qualified emoji, including 🫫 🫹 🫺 🫌 🫝 🛙 🪋 🪌 🪍)
+- Search in **English** or **Spanish**, with names and keywords from Unicode CLDR
+- Recently used emoji show up at the top
+- Switch between **list** and **grid** view from the tray menu
+- Navigate results with the arrow keys and press <kbd>Enter</kbd> to paste the selected emoji
+- **Custom shortcuts** (Windows / Linux): add your own text triggers that expand to any emoji or text
+- **Start at login** (Windows): launch Geniemoji when you sign in
+- Country flags and some combined emoji that Windows can't draw are shown with Twemoji images (the real emoji is still what gets copied)
+
+> Emoji added in Unicode 18.0 only display once your operating system's emoji font supports them.
+
 # This is Geniemoji 🧞‍♂️
 <img src="https://github.com/virejdasani/Geniemoji/blob/master/assets/PreviewImg/SC-menuBarIcon.png" alt="Geniemoji Tray Icon">
 
@@ -43,7 +55,12 @@ Its purpose is to serve you with the most relevant emojis based on your command!
 - Go to the releases tab and download the latest version for your operating system
 OR
 - clone the repo or download it as a zip
-- Run `npm install` followed by `npm start` to run Geniemoji
+- Run `npm install` followed by `npm start` inside `app/windowsNlinux` (Windows / Linux) or `app/macos` (MacOS) to run Geniemoji
+- See [app/README.md](app/README.md) for building the Windows installer and platform notes
+
+## Emoji data
+- The emoji list lives in `app/*/src/emojis.json` and follows the official [Unicode full emoji list](https://www.unicode.org/emoji/charts/full-emoji-list.html)
+- Source files: [`assets/unicode`](assets/unicode) (`emoji-test.txt`, `emoji-sequences.txt`) and Spanish annotations from [CLDR](https://cldr.unicode.org/) in [`assets/cldr`](assets/cldr)
 
 ### Check out Geniemoji on YouTube [here](https://youtu.be/2k41mwqKN9A)
 

@@ -1,4 +1,4 @@
-const appVersion = "6.0.0";
+const appVersion = "7.0.0";
 
 const electron = window.require("electron");
 
