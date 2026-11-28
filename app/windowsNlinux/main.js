@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, globalShortcut, Menu, ipcMain, clipboard } = require("electron");
+const { app, BrowserWindow, Tray, globalShortcut, Menu, ipcMain, clipboard, dialog } = require("electron");
 const { LRUMap } = require("lru_map");
 const { execFile } = require("child_process");
 const { promisify } = require("util");
@@ -29,6 +29,9 @@ let window = undefined;
 let shortcutWindow = undefined;
 let language = store.get("language", "en");
 let viewStyle = store.get("viewStyle", "list");
+const EMOJI_STYLES = ["system", "twemoji", "openmoji"];
+let emojiStyle = store.get("emojiStyle", "system");
+if (!EMOJI_STYLES.includes(emojiStyle)) emojiStyle = "system";
 let textShortcuts = normalizeTextShortcuts(store.get("textShortcuts", []));
 let openAtLogin = store.get("openAtLogin", false);
 let pauseInFullscreen = store.get("pauseInFullscreen", true);
@@ -47,6 +50,19 @@ const trayStrings = {
     viewStyle: "View style",
     list: "List",
     grid: "Grid",
+    emojiStyle: "Emoji style",
+    styleSystem: "System",
+    styleTwemoji: "Twemoji  ⚠",
+    styleOpenmoji: "OpenMoji",
+    twemojiWarningTitle: "Twemoji doesn't have the newest emojis yet",
+    twemojiWarningDetail:
+      "Unicode 18.0 came out on September 16, 2026, with 19 new emojis like " +
+      "the cracking face, pickle, lighthouse and meteor. Twemoji hasn't drawn " +
+      "them yet, so they won't show up in search with this style.\n\n" +
+      "OpenMoji already has them. You can use OpenMoji for now and switch " +
+      "back to Twemoji once it catches up.",
+    useOpenmoji: "Use OpenMoji",
+    keepTwemoji: "Keep Twemoji",
     shortcuts: "Shortcuts",
     addShortcut: "Add shortcut…",
     editShortcut: "Edit",
@@ -67,6 +83,20 @@ const trayStrings = {
     viewStyle: "Estilo de vista",
     list: "Lista",
     grid: "Cuadrícula",
+    emojiStyle: "Estilo de emoji",
+    styleSystem: "Sistema",
+    styleTwemoji: "Twemoji  ⚠",
+    styleOpenmoji: "OpenMoji",
+    twemojiWarningTitle: "Twemoji todavía no tiene los emojis más nuevos",
+    twemojiWarningDetail:
+      "Unicode 18.0 salió el 16 de septiembre de 2026, con 19 emojis nuevos " +
+      "como la cara resquebrajándose, el pepinillo, el faro y el meteorito. " +
+      "Twemoji aún no los ha dibujado, así que no aparecerán en la búsqueda " +
+      "con este estilo.\n\n" +
+      "OpenMoji ya los incluye. Puedes usar OpenMoji por ahora y volver a " +
+      "Twemoji cuando se ponga al día.",
+    useOpenmoji: "Usar OpenMoji",
+    keepTwemoji: "Mantener Twemoji",
     shortcuts: "Atajos",
     addShortcut: "Agregar atajo…",
     editShortcut: "Editar",
@@ -247,6 +277,32 @@ const setViewStyle = (nextViewStyle) => {
   }
 };
 
+const setEmojiStyle = (nextEmojiStyle) => {
+  if (!EMOJI_STYLES.includes(nextEmojiStyle)) return;
+  emojiStyle = nextEmojiStyle;
+  store.set("emojiStyle", emojiStyle);
+  updateTrayMenu();
+  if (window && !window.isDestroyed()) {
+    window.webContents.send("emoji-style-changed", emojiStyle);
+  }
+};
+
+// Twemoji has no Emoji 18.0 images yet: explain before switching and offer OpenMoji
+const chooseTwemoji = async () => {
+  const t = trayStrings[language] || trayStrings.en;
+  const { response } = await dialog.showMessageBox({
+    type: "warning",
+    title: "Geniemoji",
+    message: t.twemojiWarningTitle,
+    detail: t.twemojiWarningDetail,
+    buttons: [t.useOpenmoji, t.keepTwemoji],
+    defaultId: 0,
+    cancelId: 1,
+    noLink: true,
+  });
+  setEmojiStyle(response === 0 ? "openmoji" : "twemoji");
+};
+
 const openShortcutWindow = (triggerToEdit = null) => {
   if (shortcutWindow && !shortcutWindow.isDestroyed()) {
     shortcutWindow.focus();
@@ -367,6 +423,29 @@ const updateTrayMenu = () => {
         ],
       },
       {
+        label: t.emojiStyle,
+        submenu: [
+          {
+            label: t.styleSystem,
+            type: "radio",
+            checked: emojiStyle === "system",
+            click: () => setEmojiStyle("system"),
+          },
+          {
+            label: t.styleTwemoji,
+            type: "radio",
+            checked: emojiStyle === "twemoji",
+            click: () => chooseTwemoji(),
+          },
+          {
+            label: t.styleOpenmoji,
+            type: "radio",
+            checked: emojiStyle === "openmoji",
+            click: () => setEmojiStyle("openmoji"),
+          },
+        ],
+      },
+      {
         label: t.shortcuts,
         submenu: [
           {
@@ -477,16 +556,20 @@ const createWindow = () => {
 const fold = (s) =>
   s.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
 
-const emojiMatchesQuery = (item, query) => {
-  const q = fold(query);
-  return (
-    fold(item.keywords).includes(q) ||
-    fold(item.name).includes(q) ||
-    (item.keywords_es && fold(item.keywords_es).includes(q)) ||
-    (item.name_es && fold(item.name_es).includes(q)) ||
-    (item.alias && fold(item.alias).includes(q))
-  );
-};
+// Fold every emoji's searchable text once at startup instead of on every keystroke
+const emojiSearchText = new Map(
+  emojis.map((item) => [
+    item,
+    fold(
+      [item.keywords, item.name, item.keywords_es, item.name_es, item.alias]
+        .filter(Boolean)
+        .join("\n")
+    ),
+  ])
+);
+
+const emojiMatchesQuery = (item, foldedQuery) =>
+  emojiSearchText.get(item).includes(foldedQuery);
 
 const shortcutMatchesQuery = (shortcut, query) => {
   const q = fold(query);
@@ -515,8 +598,9 @@ ipcMain.handle("getEmojisForSearchString", (_event, arg) => {
     .map(shortcutToSearchItem);
 
   // Search English and Spanish names/keywords
+  const foldedQuery = fold(query);
   const matchedEmojis = emojis
-    .filter((item) => emojiMatchesQuery(item, query))
+    .filter((item) => emojiMatchesQuery(item, foldedQuery))
     .sort((a, b) => {
       if (lruMap.has(a.char) && !lruMap.has(b.char)) {
         // A is in recently used and B is not
@@ -617,6 +701,7 @@ ipcMain.on("selectEmoji", (_event, arg) => {
 
 ipcMain.handle("getLanguage", () => language);
 ipcMain.handle("getViewStyle", () => viewStyle);
+ipcMain.handle("getEmojiStyle", () => emojiStyle);
 
 const toggleWindow = () => {
   if (window.isVisible()) {

@@ -35,9 +35,16 @@ const uiStrings = {
 
 let language = "en";
 let viewStyle = "list";
+// "system": the OS emoji font, with images only for what it cannot draw
+// "twemoji" / "openmoji": every emoji drawn with that image set
+let emojiStyle = "system";
 var searchCommand;
 let currentEmojis = [];
 let selectedIndex = 0;
+// Results are rendered in chunks; a broad query ("c") matches thousands of emojis
+const RENDER_CHUNK = 80;
+let renderedCount = 0;
+let searchSeq = 0;
 
 function t() {
   return uiStrings[language] || uiStrings.en;
@@ -96,12 +103,15 @@ function focusSearchInput() {
 }
 
 function applySelectionHighlight() {
-  const buttons = document.querySelectorAll(".emojiButton");
-  buttons.forEach((button, index) => {
-    button.classList.toggle("selected", index === selectedIndex);
-  });
-  const selected = buttons[selectedIndex];
+  ensureRendered(selectedIndex);
+  document
+    .querySelectorAll(".emojiButton.selected")
+    .forEach((button) => button.classList.remove("selected"));
+  const selected = document.querySelector(
+    `.emojiButton[data-index="${selectedIndex}"]`
+  );
   if (selected) {
+    selected.classList.add("selected");
     selected.scrollIntoView({ block: "nearest" });
   }
 }
@@ -134,12 +144,28 @@ function moveSelectionVertical(direction) {
 // Search as the user types. Use 'input' (not keyup) so arrow-key navigation does not reset selection.
 document.getElementById("commandInput").addEventListener("input", search);
 
+// Render the next chunk of results when scrolling near the bottom
+document.getElementById("answer").addEventListener("scroll", (event) => {
+  const el = event.currentTarget;
+  if (el.scrollTop + el.clientHeight >= el.scrollHeight - 200) {
+    renderMore(RENDER_CHUNK);
+  }
+});
+
 Promise.all([
   electron.ipcRenderer.invoke("getLanguage"),
   electron.ipcRenderer.invoke("getViewStyle"),
-]).then(([nextLanguage, nextViewStyle]) => {
+  electron.ipcRenderer.invoke("getEmojiStyle"),
+]).then(([nextLanguage, nextViewStyle, nextEmojiStyle]) => {
   language = nextLanguage === "es" ? "es" : "en";
   viewStyle = nextViewStyle === "grid" ? "grid" : "list";
+  emojiStyle = normalizeEmojiStyle(nextEmojiStyle);
+  refreshView();
+  warmGlyphSupportCache();
+});
+
+electron.ipcRenderer.on("emoji-style-changed", (_event, nextEmojiStyle) => {
+  emojiStyle = normalizeEmojiStyle(nextEmojiStyle);
   refreshView();
 });
 
@@ -171,7 +197,13 @@ fetch("https://virejdasani.github.io/RemoteJSON/Geniemoji/index.html")
   });
 
 const TWEMOJI_VERSION = "17.0.3";
+// The npm package is used because jsDelivr refuses the OpenMoji GitHub repo (over 50 MB)
+const OPENMOJI_VERSION = "17.0.0";
 const ZWJ = "200D";
+
+function normalizeEmojiStyle(value) {
+  return value === "twemoji" || value === "openmoji" ? value : "system";
+}
 // Unicode 17 joiners that Windows still draws as separate people + object.
 const UNSUPPORTED_ZWJ_JOINERS = new Set(["1FAEF", "1F430"]);
 
@@ -194,30 +226,176 @@ function isFlagEmoji(item) {
   return codes[0] === "1F3F4" && codes.some((c) => c.startsWith("E00"));
 }
 
+// Emoji 18.0 base code points. Twemoji 17.0.3 and OpenMoji 17.0.0 have no images for
+// them; the OpenMoji ones are bundled in src/openmoji. With the Twemoji style they are
+// hidden unless the system font can draw them, instead of showing a blank box.
+const EMOJI_18_BASES = new Set([
+  "1FAEB", "1FAF9", "1FAFA", "1FACC", "1FADD", "1F6D9", "1FA8B", "1FA8C", "1FA8D",
+]);
+
+// Detect whether the system emoji font can draw a sequence by drawing it on a
+// small canvas: a missing glyph (tofu) is monochrome and follows fillStyle, while a
+// color emoji does not; a sequence the font cannot compose is drawn about 2x wide.
+// Drawing a color glyph the first time costs ~2ms, so only emojis using code points
+// from U+1FA70 up (Emoji 12+, where system fonts lag behind) are probed, and results
+// are cached for the session.
+const PROBE_SIZE = 24;
+const PROBE_MIN_CODE = 0x1fa70;
+const glyphSupportCache = new Map();
+let glyphProbe = null;
+
+function mayBeUnsupported(item) {
+  return item.codes
+    .split(" ")
+    .some((code) => parseInt(code, 16) >= PROBE_MIN_CODE);
+}
+
+function getGlyphProbe() {
+  if (glyphProbe) return glyphProbe;
+  const canvas = document.createElement("canvas");
+  canvas.width = PROBE_SIZE;
+  canvas.height = PROBE_SIZE;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.font = `16px ${getComputedStyle(document.body).fontFamily}`;
+  ctx.textBaseline = "top";
+  glyphProbe = { ctx, refWidth: ctx.measureText("😀").width };
+  return glyphProbe;
+}
+
+function drawGlyph(ctx, char, color) {
+  ctx.clearRect(0, 0, PROBE_SIZE, PROBE_SIZE);
+  ctx.fillStyle = color;
+  ctx.fillText(char, 2, 2);
+  return ctx.getImageData(0, 0, PROBE_SIZE, PROBE_SIZE).data;
+}
+
+function canRenderNatively(item) {
+  if (!item.codes || !mayBeUnsupported(item)) return true;
+  const char = item.char;
+  const cached = glyphSupportCache.get(char);
+  if (cached !== undefined) return cached;
+
+  const { ctx, refWidth } = getGlyphProbe();
+  let supported = ctx.measureText(char).width <= refWidth * 1.4;
+  if (supported) {
+    const dark = drawGlyph(ctx, char, "#000");
+    const light = drawGlyph(ctx, char, "#fff");
+    let painted = 0;
+    let followsFill = 0;
+    for (let i = 3; i < dark.length; i += 4) {
+      if (!dark[i] && !light[i]) continue;
+      painted++;
+      if (Math.abs(dark[i - 3] - light[i - 3]) > 64) followsFill++;
+    }
+    supported = painted > 0 && followsFill < painted / 2;
+  }
+  glyphSupportCache.set(char, supported);
+  return supported;
+}
+
+function isEmoji18(item) {
+  return EMOJI_18_BASES.has(item.codes.split(" ")[0]);
+}
+
+// With the Twemoji style, hide emojis that neither Twemoji nor the system font can show
+function isDisplayable(item) {
+  if (!item.codes || !isEmoji18(item)) return true;
+  if (emojiStyle !== "twemoji") return true;
+  return canRenderNatively(item);
+}
+
+// Probe the risky emojis while the app is idle so the first search does not pay for it
+function warmGlyphSupportCache() {
+  if (typeof requestIdleCallback !== "function") return;
+  electron.ipcRenderer
+    .invoke("getEmojisForSearchString", "")
+    .then((all) => {
+      const pending = all.filter((item) => item.codes && mayBeUnsupported(item));
+      const step = (deadline) => {
+        while (pending.length && deadline.timeRemaining() > 4) {
+          canRenderNatively(pending.pop());
+        }
+        if (pending.length) requestIdleCallback(step);
+      };
+      requestIdleCallback(step);
+    })
+    .catch(() => {});
+}
+
 function isUnsupportedZwjEmoji(item) {
   const codes = item.codes.split(" ");
   if (!codes.includes(ZWJ)) return false;
   return codes.some((code) => UNSUPPORTED_ZWJ_JOINERS.has(code));
 }
 
-function needsTwemojiImage(item) {
-  if (!item || !item.codes) return false;
-  return isFlagEmoji(item) || isUnsupportedZwjEmoji(item);
+// System style only: whether the OS font needs an image stand-in for this emoji
+function needsImageFallback(item) {
+  if (emojiStyle !== "system" || !item || !item.codes) return false;
+  return (
+    isFlagEmoji(item) ||
+    isUnsupportedZwjEmoji(item) ||
+    !canRenderNatively(item)
+  );
 }
 
-function emojiImageHtml(item) {
-  const hex = item.codes.split(" ").map((c) => c.toLowerCase()).join("-");
-  const src = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@${TWEMOJI_VERSION}/assets/72x72/${hex}.png`;
-  return `<img class="emojiImage" src="${src}" alt="${item.char}" draggable="false" onerror="this.replaceWith(document.createTextNode(this.alt))">`;
+// Twemoji file names: lowercase hex without leading zeros, FE0F dropped unless the
+// sequence has a ZWJ. A few ZWJ files drop FE0F too, so that is the fallback.
+function twemojiUrls(item) {
+  const codes = item.codes.split(" ");
+  const base = `https://cdn.jsdelivr.net/gh/jdecked/twemoji@${TWEMOJI_VERSION}/assets/72x72/`;
+  const toFile = (list) =>
+    `${base}${list.map((c) => parseInt(c, 16).toString(16)).join("-")}.png`;
+  const withoutFe0f = codes.filter((c) => c !== "FE0F");
+  const primary = codes.includes(ZWJ) ? codes : withoutFe0f;
+  const urls = [toFile(primary)];
+  if (withoutFe0f.length !== primary.length) urls.push(toFile(withoutFe0f));
+  return urls;
+}
+
+// OpenMoji file names: uppercase hex as listed, except a lone "X FE0F" is just "X"
+function openmojiUrls(item) {
+  let codes = item.codes.split(" ");
+  if (codes.length === 2 && codes[1] === "FE0F") codes = [codes[0]];
+  const file = `${codes.join("-")}.svg`;
+  if (isEmoji18(item)) return [`../src/openmoji/${file}`];
+  return [`https://cdn.jsdelivr.net/npm/openmoji@${OPENMOJI_VERSION}/color/svg/${file}`];
+}
+
+// Tries each URL in turn and falls back to the plain emoji text
+function emojiImageHtml(item, urls) {
+  return `<img class="emojiImage" src="${urls[0]}" data-fallbacks="${escapeAttr(
+    urls.slice(1).join("|")
+  )}" alt="${escapeAttr(item.char)}" draggable="false" onerror="nextEmojiImage(this)">`;
+}
+
+function nextEmojiImage(img) {
+  const rest = (img.dataset.fallbacks || "").split("|").filter(Boolean);
+  if (rest.length) {
+    img.dataset.fallbacks = rest.slice(1).join("|");
+    img.src = rest[0];
+  } else {
+    img.replaceWith(document.createTextNode(img.alt));
+  }
 }
 
 function unsupportedMarkerHtml() {
   return `<span class="emojiUnsupported" aria-hidden="true">*</span>`;
 }
 
+// System style stand-in: Twemoji first, then OpenMoji (which has Emoji 18.0)
+function systemFallbackHtml(item) {
+  const urls = isEmoji18(item)
+    ? openmojiUrls(item)
+    : [...twemojiUrls(item), ...openmojiUrls(item)];
+  return `${emojiImageHtml(item, urls)}${unsupportedMarkerHtml()}`;
+}
+
 function emojiDisplayHtml(item) {
-  if (!needsTwemojiImage(item)) return item.char;
-  return `${emojiImageHtml(item)}${unsupportedMarkerHtml()}`;
+  if (!item.codes) return item.char;
+  if (emojiStyle === "twemoji") return emojiImageHtml(item, twemojiUrls(item));
+  if (emojiStyle === "openmoji") return emojiImageHtml(item, openmojiUrls(item));
+  if (!needsImageFallback(item)) return item.char;
+  return systemFallbackHtml(item);
 }
 
 function truncatePreview(text, max = 36) {
@@ -243,7 +421,7 @@ function renderEmojiButton(item, index) {
         </button>
       `;
     }
-    const unsupportedClass = needsTwemojiImage(item) ? " hasUnsupportedEmoji" : "";
+    const unsupportedClass = needsImageFallback(item) ? " hasUnsupportedEmoji" : "";
     return `
       <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton emojiGridButton${selectedClass}${unsupportedClass}" title="${title}" data-index="${index}" tabindex="-1">
         ${emojiDisplayHtml(item)}
@@ -261,7 +439,7 @@ function renderEmojiButton(item, index) {
     `;
   }
 
-  const unsupportedClass = needsTwemojiImage(item) ? " hasUnsupportedEmoji" : "";
+  const unsupportedClass = needsImageFallback(item) ? " hasUnsupportedEmoji" : "";
   return `
     <button type="button" onclick="typeEmojiAt(${index})" class="emojiButton${selectedClass}${unsupportedClass}" data-index="${index}" tabindex="-1">
       ${emojiDisplayHtml(item)}
@@ -272,56 +450,77 @@ function renderEmojiButton(item, index) {
 }
 
 async function search() {
-  // Get the value of the search input
+  const seq = ++searchSeq;
   searchCommand = document.getElementById("commandInput").value.toLowerCase();
 
-  let answerEmojis;
-  const strings = t();
-
-  const emojis = await electron.ipcRenderer.invoke(
+  const results = await electron.ipcRenderer.invoke(
     "getEmojisForSearchString",
     searchCommand
   );
-  currentEmojis = emojis;
+  // A newer keystroke already started another search; drop this result
+  if (seq !== searchSeq) return;
+
+  currentEmojis = results.filter(isDisplayable);
   selectedIndex = 0;
-  emojis.forEach((item, i) => {
-    answerEmojis += renderEmojiButton(item, i);
-  });
+  renderedCount = 0;
 
-  // If there are no matching emojis, it returns undefined. To not display 'undefined', we do the following
-  if (typeof answerEmojis !== "string") {
-    answerEmojis = `
-            <h3 id="displayedEmojiName">${strings.noMatch}</h3>
-            <div id="credit">
-              ${strings.credit}
-            </div>
-        `;
-  } else if (viewStyle === "grid") {
-    answerEmojis = `<div class="emojiGrid">${answerEmojis}</div>`;
+  const answer = document.getElementById("answer");
+  if (!currentEmojis.length) {
+    const strings = t();
+    answer.innerHTML = `
+      <h3 id="displayedEmojiName">${strings.noMatch}</h3>
+      <div id="credit">
+        ${strings.credit}
+      </div>
+    `;
+  } else {
+    const listClass = viewStyle === "grid" ? "emojiGrid" : "emojiList";
+    answer.innerHTML = `<div id="emojiResults" class="${listClass}"></div>`;
+    answer.scrollTop = 0;
+    renderMore(RENDER_CHUNK);
   }
-
-  // answerEmojis returns 'undefined' before all the emojis. This is probably a zero index error but this works for now. Whenever this happens, the code below removes 'undefined' from the answer string
-  if (answerEmojis.includes("undefined")) {
-    answerEmojis = answerEmojis.replace("undefined", "");
-  }
-
-  // Displays all the matching emojis in the answer html div
-  document.getElementById("answer").innerHTML = answerEmojis;
-  replaceOverflowingEmojiGlyphs();
   focusSearchInput();
-} // Search function end
+}
 
-function replaceOverflowingEmojiGlyphs() {
-  if (viewStyle !== "grid") return;
-  document.querySelectorAll(".emojiGridButton").forEach((button) => {
+function renderMore(count) {
+  const list = document.getElementById("emojiResults");
+  if (!list) return;
+  const end = Math.min(currentEmojis.length, renderedCount + count);
+  if (end <= renderedCount) return;
+  let html = "";
+  for (let i = renderedCount; i < end; i++) {
+    html += renderEmojiButton(currentEmojis[i], i);
+  }
+  const start = renderedCount;
+  list.insertAdjacentHTML("beforeend", html);
+  renderedCount = end;
+  replaceOverflowingEmojiGlyphs(list, start);
+}
+
+// Sequences the font cannot compose (e.g. two people + an object) overflow their grid
+// cell; show those as Twemoji images. All widths are read before any button is changed
+// so the browser lays out once per chunk instead of once per button.
+function replaceOverflowingEmojiGlyphs(list, fromIndex) {
+  if (viewStyle !== "grid" || emojiStyle !== "system") return;
+  const overflowing = [];
+  list.querySelectorAll(".emojiGridButton").forEach((button) => {
+    if (Number(button.dataset.index) < fromIndex) return;
     if (button.classList.contains("shortcutGridButton")) return;
     if (button.querySelector(".emojiImage")) return;
-    if (button.scrollWidth <= button.clientWidth + 1) return;
+    if (button.scrollWidth > button.clientWidth + 1) overflowing.push(button);
+  });
+  overflowing.forEach((button) => {
     const item = currentEmojis[Number(button.dataset.index)];
     if (!item || !item.codes) return;
-    button.innerHTML = `${emojiImageHtml(item)}${unsupportedMarkerHtml()}`;
+    button.innerHTML = systemFallbackHtml(item);
     button.classList.add("hasUnsupportedEmoji");
   });
+}
+
+function ensureRendered(index) {
+  if (index >= renderedCount) {
+    renderMore(index - renderedCount + RENDER_CHUNK);
+  }
 }
 
 // Enter types the highlighted emoji/shortcut, copies it, and closes Geniemoji
