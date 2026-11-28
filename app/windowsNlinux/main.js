@@ -73,6 +73,7 @@ const trayStrings = {
         ? "Start at login"
         : "Start with Windows",
     pauseInFullscreen: "Pause Ctrl+E in fullscreen apps",
+    about: "About Geniemoji",
     exit: "Exit",
   },
   es: {
@@ -107,6 +108,7 @@ const trayStrings = {
         ? "Iniciar al iniciar sesión"
         : "Iniciar con Windows",
     pauseInFullscreen: "Pausar Ctrl+E en apps de pantalla completa",
+    about: "Acerca de Geniemoji",
     exit: "Salir",
   },
 };
@@ -342,6 +344,51 @@ const openShortcutWindow = (triggerToEdit = null) => {
   });
 };
 
+let aboutWindow = undefined;
+
+const openAboutWindow = () => {
+  if (aboutWindow && !aboutWindow.isDestroyed()) {
+    aboutWindow.focus();
+    return;
+  }
+
+  aboutWindow = new BrowserWindow({
+    width: 380,
+    height: 700,
+    show: false,
+    resizable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: "Geniemoji",
+    backgroundColor: "#202020",
+  });
+
+  const query = new URLSearchParams({
+    version: app.getVersion(),
+    lang: language,
+  }).toString();
+  aboutWindow.loadURL(
+    `file://${path.join(__dirname, "public/about.html")}?${query}`
+  );
+  aboutWindow.setMenu(null);
+  // Credit links open in the default browser
+  aboutWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.startsWith("https://")) open(url);
+    return { action: "deny" };
+  });
+  aboutWindow.webContents.on("will-navigate", (event, url) => {
+    event.preventDefault();
+    if (url.startsWith("https://")) open(url);
+  });
+  aboutWindow.once("ready-to-show", () => {
+    if (aboutWindow && !aboutWindow.isDestroyed()) aboutWindow.show();
+  });
+  aboutWindow.on("closed", () => {
+    aboutWindow = undefined;
+  });
+};
+
 const closeShortcutWindow = () => {
   if (shortcutWindow && !shortcutWindow.isDestroyed()) {
     shortcutWindow.close();
@@ -477,6 +524,10 @@ const updateTrayMenu = () => {
           ]
         : []),
       { type: "separator" },
+      {
+        label: t.about,
+        click: () => openAboutWindow(),
+      },
       {
         label: t.exit,
         click: () => {

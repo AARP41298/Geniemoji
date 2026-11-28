@@ -30,6 +30,7 @@ Its purpose is to serve you with the most relevant emojis based on your command!
 - **Custom shortcuts** (Windows / Linux): add your own text triggers that expand to any emoji or text
 - **Start at login** (Windows): launch Geniemoji when you sign in
 - **Game friendly** (Windows): while a fullscreen app (game, fullscreen video, presentation) is in front, Geniemoji releases <kbd>Control</kbd> + <kbd>e</kbd> so the game gets the key, and takes it back when you leave. Toggle it with "Pause Ctrl+E in fullscreen apps" in the tray menu
+- **About** window in the tray menu with credits for the original author, contributors and the open-source projects Geniemoji uses
 - **Emoji style** (Windows / Linux): pick **System**, **Twemoji** or **OpenMoji** from the tray menu. With System, country flags, combined emoji and new emoji that your emoji font can't draw are shown as images. The style only changes how emoji look in Geniemoji; the real emoji is still what gets pasted
 
 > Twemoji doesn't include the Unicode 18.0 emoji yet, so they are hidden with that style. OpenMoji (and System, through OpenMoji images) already shows them.

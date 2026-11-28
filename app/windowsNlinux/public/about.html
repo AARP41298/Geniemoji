@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="../src/style.css">
+  <title>About Geniemoji</title>
+  <style>
+    body.about-page {
+      overflow: auto;
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    }
+
+    .about-page .app {
+      text-align: left;
+      padding: 18px 20px 20px;
+    }
+
+    .about-page header {
+      text-align: center;
+      margin-bottom: 14px;
+    }
+
+    .about-page .logo {
+      font-size: 40px;
+      line-height: 1;
+    }
+
+    .about-page h1 {
+      font-size: 18px;
+      font-weight: 600;
+      margin: 6px 0 2px;
+    }
+
+    .about-page .version {
+      font-size: 12px;
+      color: #a0a0a0;
+    }
+
+    .about-page h2 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #8a8a8a;
+      margin: 12px 0 4px;
+    }
+
+    .about-page ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+    }
+
+    .about-page li {
+      font-size: 13px;
+      padding: 2px 0;
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .about-page li .note {
+      color: #8a8a8a;
+      font-size: 12px;
+      text-align: right;
+      white-space: nowrap;
+    }
+
+    .about-page a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+
+    .about-page a:hover {
+      text-decoration: underline;
+    }
+
+    .about-page .footer {
+      margin-top: 18px;
+      font-size: 11px;
+      color: #727272;
+      text-align: center;
+    }
+  </style>
+</head>
+
+<body class="about-page">
+  <div class="app">
+    <header>
+      <div class="logo">🧞‍♂️</div>
+      <h1>Geniemoji</h1>
+      <div class="version" id="version"></div>
+    </header>
+
+    <h2 data-i18n="author">Created by</h2>
+    <ul>
+      <li><a href="https://github.com/virejdasani">Virej Dasani</a><span class="note" data-i18n="original">original author</span></li>
+    </ul>
+
+    <h2 data-i18n="contributors">Contributors</h2>
+    <ul>
+      <li><a href="https://github.com/AARP41298">Aarón Rodríguez</a><span class="note">Windows / Linux 7.x</span></li>
+      <li><a href="https://github.com/tomershvueli">Tomer Shvueli</a></li>
+      <li><span>Thomas Ames</span></li>
+    </ul>
+
+    <h2 data-i18n="emojiArt">Emoji images</h2>
+    <ul>
+      <li><a href="https://openmoji.org/">OpenMoji</a><span class="note">CC BY-SA 4.0</span></li>
+      <li><a href="https://github.com/jdecked/twemoji">Twemoji</a><span class="note">CC BY 4.0</span></li>
+    </ul>
+
+    <h2 data-i18n="emojiData">Emoji data</h2>
+    <ul>
+      <li><a href="https://www.unicode.org/emoji/">Unicode Emoji 18.0</a><span class="note">Unicode License v3</span></li>
+      <li><a href="https://cldr.unicode.org/" data-i18n="cldr">Unicode CLDR (names &amp; keywords)</a><span class="note">Unicode License v3</span></li>
+    </ul>
+
+    <h2 data-i18n="builtWith">Built with</h2>
+    <ul>
+      <li><a href="https://www.electronjs.org/">Electron</a><span class="note">MIT</span></li>
+      <li><a href="https://github.com/sindresorhus/electron-store">electron-store</a><span class="note">MIT</span></li>
+      <li><a href="https://koffi.dev/">Koffi</a><span class="note">MIT</span></li>
+      <li><a href="https://github.com/rsms/js-lru">lru_map</a><span class="note">MIT</span></li>
+      <li><a href="https://github.com/sindresorhus/open">open</a><span class="note">MIT</span></li>
+      <li><a href="https://getbootstrap.com/docs/3.3/">Bootstrap 3</a><span class="note">MIT</span></li>
+      <li><a href="https://www.electron.build/">electron-builder</a><span class="note">MIT</span></li>
+    </ul>
+
+    <div class="footer">
+      <a href="https://github.com/AARP41298/Geniemoji" data-i18n="source">Source code</a> ·
+      <a href="https://github.com/virejdasani/Geniemoji" data-i18n="upstream">Original project</a> ·
+      MIT
+    </div>
+  </div>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const version = params.get("version");
+    const strings = {
+      es: {
+        title: "Acerca de Geniemoji",
+        version: "Versión",
+        author: "Creado por",
+        original: "autor original",
+        contributors: "Colaboradores",
+        emojiArt: "Imágenes de emoji",
+        emojiData: "Datos de emoji",
+        cldr: "Unicode CLDR (nombres y palabras clave)",
+        builtWith: "Hecho con",
+        source: "Código fuente",
+        upstream: "Proyecto original",
+      },
+    };
+    const t = strings[params.get("lang")];
+    if (t) {
+      document.title = t.title;
+      document.querySelectorAll("[data-i18n]").forEach((el) => {
+        const value = t[el.dataset.i18n];
+        if (value) el.textContent = value;
+      });
+    }
+    if (version) {
+      document.getElementById("version").textContent =
+        `${t ? t.version : "Version"} ${version}`;
+    }
+  </script>
+</body>
+
+</html>
